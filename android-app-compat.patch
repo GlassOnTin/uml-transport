@@ -1,0 +1,65 @@
+diff --git a/arch/um/os-Linux/main.c b/arch/um/os-Linux/main.c
+index 7e114862a..eddfd2946 100644
+--- a/arch/um/os-Linux/main.c
++++ b/arch/um/os-Linux/main.c
+@@ -21,6 +21,21 @@
+ 
+ #define STACKSIZE (8 * 1024 * 1024)
+ 
++static void sigsys_diag(int sig, siginfo_t *si, void *uc)
++{
++	char buf[64];
++	int n;
++
++	(void)sig;
++	(void)uc;
++	n = snprintf(buf, sizeof(buf), "SIGSYS: blocked syscall %d\n",
++		     si->si_syscall);
++	if (write(2, buf, n) != n)
++		/* nothing more we can do here */
++		;
++	_exit(159);
++}
++
+ static void __init set_stklim(void)
+ {
+ 	struct rlimit lim;
+@@ -105,8 +120,37 @@ int __init main(int argc, char **argv, char **envp)
+ 	char **new_argv;
+ 	int ret, i, err;
+ 
+-	/* Disable randomization and re-exec if it was changed successfully */
++	/*
++	 * Diagnostic: an Android app seccomp filter delivers SIGSYS
++	 * (SECCOMP_RET_TRAP) for allowlisted-syscalls it forbids, and an
++	 * unhandled SIGSYS kills the process silently. Name the blocked
++	 * syscall on stderr before dying so the caller sees why. UML's own
++	 * seccomp-mode setup replaces this handler later if it runs.
++	 */
++	{
++		struct sigaction sa = {};
++
++		sa.sa_sigaction = sigsys_diag;
++		sa.sa_flags = SA_SIGINFO | SA_RESETHAND | SA_NODEFER;
++		sigemptyset(&sa.sa_mask);
++		if (sigaction(SIGSYS, &sa, NULL) < 0)
++			os_warn("cannot install SIGSYS diagnostic handler\n");
++	}
++
++	/*
++	 * Disable randomization and re-exec if it was changed successfully.
++	 *
++	 * Android: the app seccomp allowlist kills personality() outright
++	 * (SECCOMP_RET_KILL, no SIGSYS is delivered), so the call cannot be
++	 * attempted in an app process. ASLR staying on is acceptable here:
++	 * the kernel and the stub are statically linked ET_EXEC images and
++	 * load at their link addresses regardless of randomization.
++	 */
++#ifdef __ANDROID__
++	ret = -1;
++#else
+ 	ret = personality(PER_LINUX | ADDR_NO_RANDOMIZE);
++#endif
+ 	if (ret >= 0 && (ret & (PER_LINUX | ADDR_NO_RANDOMIZE)) !=
+ 			 (PER_LINUX | ADDR_NO_RANDOMIZE)) {
+ 		char buf[4096] = {};
