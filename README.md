@@ -54,7 +54,7 @@ Build with the NDK toolchain so the kernel takes its bionic paths:
     export NDK=$HOME/Android/Sdk/ndk/27.0.12077973
     PATH=$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
     make -C linux-um-arm64 ARCH=um SUBARCH=arm64 LLVM=1 O=$PWD/build defconfig
-    scripts/config --file build/.config -e STATIC_LINK -e UML_NET_VECTOR
+    linux-um-arm64/scripts/config --file build/.config -e STATIC_LINK -e UML_NET_VECTOR
     make -C linux-um-arm64 ARCH=um SUBARCH=arm64 LLVM=1 O=$PWD/build olddefconfig
     make -C linux-um-arm64 ARCH=um SUBARCH=arm64 LLVM=1 O=$PWD/build -j32
 
