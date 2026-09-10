@@ -9,7 +9,10 @@
 # socket (a batched sendmsg there is a single datagram, which would
 # concatenate frames).
 #
-# Build the musl cross toolchain's gcc first (see PROTOTYPE.md), then:
+# The musl cross toolchain is the musl.cc aarch64-linux-musl-cross prebuilt
+# (GCC 11.2.1) untarred at the default path below; MUSL_CROSS points
+# elsewhere. passt source lives at SRC (default /tmp/passt), passt at commit
+# 3a890a6 with passt-uml.patch applied. The built binary lands at DEST:
 #   ./build.sh
 set -e
 MUSL_CROSS=${MUSL_CROSS:-/tmp/aarch64-linux-musl-cross}
@@ -20,6 +23,7 @@ if [ ! -x "$CC" ]; then
 fi
 SRC=${SRC:-/tmp/passt}
 HERE=$(dirname "$0")
+DEST=${DEST:-$HERE/../apk/lib/arm64-v8a/libuml-passt.so}
 
 cd "$SRC"
 make CC="$CC" clean >/dev/null
@@ -28,4 +32,5 @@ make CC="$CC" clean >/dev/null
 make CC="$CC" static >/dev/null
 file passt
 
-cp passt "$HERE/../apk/lib/arm64-v8a/libuml-passt.so"
+mkdir -p "$(dirname "$DEST")"
+cp passt "$DEST"
