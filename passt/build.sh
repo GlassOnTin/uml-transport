@@ -29,7 +29,14 @@ cd "$SRC"
 make CC="$CC" clean >/dev/null
 # Serial: `make static` depends on `clean`, which races its parallel job
 # list and deletes seccomp.h mid-build.
-make CC="$CC" static >/dev/null
+#
+# VERSION is pinned to the string passt's Makefile falls back to when
+# `git describe` fails, which is what the released libuml-passt.so was
+# built with. Left to default, a build inside a git checkout embeds the
+# git describe string instead, and the binary comes out different (the
+# version literal lives in .rodata, and its length shifts every section
+# after it).
+make CC="$CC" VERSION='unknown\ version' static >/dev/null
 file passt
 
 mkdir -p "$(dirname "$DEST")"
