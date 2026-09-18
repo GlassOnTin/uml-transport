@@ -12,13 +12,17 @@ directory.
 
 ## Release artifacts
 
-Pinned by Haven's `fetch-uml.sh`, tag `uml-guest-1`:
+Pinned by Haven's `fetch-uml.sh`, tag `uml-guest-2`:
 
 | file | size | sha256 |
 |---|---|---|
-| `libvmlinux.so` | 79,307,152 | `7c557572db754b4794ecf7a9cfcfec58d69977d8f09dc1c71f4d9361e032271f` |
+| `libvmlinux.so` | 79,307,152 | `35b5a379f6994ffa4886757d98e6f0f1b2c6c1f14a92b29c8fb108bcff3e0f9b` |
 | `libuml-stub.so` | 1,920 | `83f51f7c45133daa135b595562b09c5e2829f1d0f1e00b7fce2a7695370781fc` |
 | `libuml-passt.so` | 608,472 | `e78fa0a504994f94423085f2b7ddfc891ab27b21a2e9150ec264ed59441c1c44` |
+
+`uml-guest-2` differs from `uml-guest-1` only in `libvmlinux.so`: it adds the
+third patch below (the vector NAPI budget fix). The stub and passt binaries
+are the same bytes as `uml-guest-1`.
 
 All three are arm64. `libvmlinux.so` and `libuml-stub.so` are statically
 linked bionic executables (renamed `lib*.so` so Android packages and execs
@@ -34,7 +38,7 @@ ELF headers and section tables change.
 
 Source is the `um-arm64` branch of
 [zalexdev/linux-um-arm64](https://github.com/zalexdev/linux-um-arm64)
-(Linux 7.2-rc4, 38 commits) at commit `8897487c5`, with the two patches in
+(Linux 7.2-rc4, 38 commits) at commit `8897487c5`, with the three patches in
 this repository applied in order:
 
 1. `stub-execve-fallback.patch` — after `execveat(fd, "", AT_EMPTY_PATH)`
@@ -45,6 +49,15 @@ this repository applied in order:
    kills `personality()` outright rather than returning an error, so skip
    the re-exec-on-ASLR-change path under `__ANDROID__` and install a
    diagnostic handler that names a blocked syscall before the process dies.
+3. `vector-napi-budget.patch` — `vector_poll` returned `napi_complete_done`
+   when `work_done <= budget`. A poll that consumed its whole budget must
+   return `budget` without completing, because `net/core/dev.c` keeps NAPI
+   scheduled by comparing `work == budget`; completing in that case
+   deschedules the poll and loses the "still more work" signal until
+   something else re-enables the queue. Verified against a production-shaped
+   load (3 concurrent agents, 80 MB of responses each, byte-exact delivery
+   with the fix and repeated "Budget exhausted after napi rescheduled"
+   warnings without it).
 
 The stub (`libuml-stub.so`) is `arch/um/kernel/skas/stub_exe` from the same
 build, renamed.
