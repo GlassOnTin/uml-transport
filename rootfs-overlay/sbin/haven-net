@@ -1,0 +1,17 @@
+#!/bin/sh
+# Stock-guest network bring-up. The recovery path configures vec0 only for
+# NBD sessions (haven-recover exits before its udhcpc on a plain guest), so
+# a stock console guest booted with no interface configured at all. Runs at
+# sysinit; retries a few times in case the passt end of the vec0 fd
+# transport is not accepting yet. Failure is non-fatal: the guest still
+# boots, and a user can bring the interface up by hand.
+i=0
+while [ $i -lt 4 ]; do
+	ifconfig vec0 up 2>/dev/null
+	if udhcpc -i vec0 -n -q >/dev/null 2>&1; then
+		exit 0
+	fi
+	i=$((i+1))
+	sleep 1
+done
+echo "warning: vec0 DHCP did not come up; run 'ifconfig vec0 up && udhcpc -i vec0 -n -q' by hand"

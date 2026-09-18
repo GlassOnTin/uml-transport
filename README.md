@@ -12,17 +12,38 @@ directory.
 
 ## Release artifacts
 
-Pinned by Haven's `fetch-uml.sh`, tag `uml-guest-2`:
+Pinned by Haven's `fetch-uml.sh`, tag `uml-guest-3`:
 
 | file | size | sha256 |
 |---|---|---|
 | `libvmlinux.so` | 79,307,152 | `35b5a379f6994ffa4886757d98e6f0f1b2c6c1f14a92b29c8fb108bcff3e0f9b` |
 | `libuml-stub.so` | 1,920 | `83f51f7c45133daa135b595562b09c5e2829f1d0f1e00b7fce2a7695370781fc` |
-| `libuml-passt.so` | 608,472 | `e78fa0a504994f94423085f2b7ddfc891ab27b21a2e9150ec264ed59441c1c44` |
+| `libuml-passt.so` | 608,472 | `17703eb787afcfc57475921f186bec6eae479db00cf60e1763c1a8459c055b36` |
 
-`uml-guest-2` differs from `uml-guest-1` only in `libvmlinux.so`: it adds the
-third patch below (the vector NAPI budget fix). The stub and passt binaries
-are the same bytes as `uml-guest-1`.
+A fourth file, `rootfs-aarch64.ext4.gz`, is pinned separately by Haven's
+`fetch-uml-rootfs.sh`:
+
+| file | size | sha256 |
+|---|---|---|
+| `rootfs-aarch64.ext4.gz` | 4,497,803 | `c4acb30d0b53421775de080dcbd498a7d94bedf628d0dba77f7fb744f3792e47` |
+
+`uml-guest-3` differs from `uml-guest-2` in `libuml-passt.so` and the rootfs.
+The kernel and stub binaries are the same bytes as `uml-guest-2`.
+
+`libuml-passt.so` picks up the passt-side raw-L2 pool-drain fix described
+under "Rebuilding passt" below (commit `0720a63` in this repository). On the
+production-shaped load the kernel NAPI fix alone already delivers every
+response; the passt drain fix bounds the same failure mode on the passt side
+of the transport.
+
+The rootfs is the Alpine aarch64 image shipped since `uml-guest-1`, edited in
+place: `/sbin/haven-net` (kept in `rootfs-overlay/sbin/` here) runs at
+sysinit after `ifup -a` and retries the vec0 DHCP a few times, printing a
+visible warning if it never comes up. `ifup -a` runs with stderr silenced in
+the image's inittab, and on some boots its udhcpc loses the race against
+passt not accepting on the vec0 fd transport yet — a fresh guest would boot
+with no interface and no hint why. `test/goose-repro.sh` is the regression
+gate for both fixes, run inside a guest.
 
 All three are arm64. `libvmlinux.so` and `libuml-stub.so` are statically
 linked bionic executables (renamed `lib*.so` so Android packages and execs
@@ -99,6 +120,11 @@ patch adds:
   at 169.254.2.1/16).
 - netlink fails soft instead of aborting, so the local-mode fallback above
   works.
+- the raw-L2 guest-input path drains each datagram into its own `pkt_buf`
+  slot. Draining every frame from the buffer start would overwrite frames
+  still queued in the packet pool, so frames are processed in place and the
+  pool is kept draining (`PASST_FORCE_LOCAL` also skips host interface
+  discovery entirely).
 
 `passt/build.sh` drives the musl static build; it expects a
 `aarch64-linux-musl` cross toolchain on `PATH`-configured paths as noted in
