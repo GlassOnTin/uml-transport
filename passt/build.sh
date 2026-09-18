@@ -7,7 +7,9 @@
 # SEQPACKET vector-fd socket), netlink fail-soft (no netlink bind in the
 # app SELinux domain), and one-frame-per-sendmsg on the SEQPACKET tap
 # socket (a batched sendmsg there is a single datagram, which would
-# concatenate frames).
+# concatenate frames), and epoll_pwait in the main loop (the seccomp
+# allow-list has epoll_pwait only; glibc's epoll_wait() issues raw
+# epoll_wait2 and gets SIGSYS on a glibc host — bionic is unaffected).
 #
 # The musl cross toolchain is the musl.cc aarch64-linux-musl-cross prebuilt
 # (GCC 11.2.1) untarred at the default path below; MUSL_CROSS points

@@ -1,3 +1,24 @@
+diff --git a/conf.c b/conf.c
+index ea0f4bc..73412f7 100644
+--- a/conf.c
++++ b/conf.c
+@@ -1844,9 +1844,14 @@ void conf(struct ctx *c, int argc, char **argv)
+ 	log_conf_parsed = true;		/* Stop printing everything */
+ 
+ 	nl_sock_init(c, false);
+-	if (!v6_only && !c->splice_only)
++	/* PASST_FORCE_LOCAL: skip host interface discovery entirely and use
++	 * local mode (guest 169.254.2.1, gateway 169.254.2.2). Deterministic
++	 * addressing and gateway-to-loopback mapping regardless of what
++	 * interfaces the host happens to have (template mode with a
++	 * gatewayless interface would disable DHCP and the mapping). */
++	if (!v6_only && !c->splice_only && !getenv("PASST_FORCE_LOCAL"))
+ 		c->ifi4 = conf_ip4(ifi4, &c->ip4);
+-	if (!v4_only && !c->splice_only)
++	if (!v4_only && !c->splice_only && !getenv("PASST_FORCE_LOCAL"))
+ 		c->ifi6 = conf_ip6(ifi6, &c->ip6);
+ 
+ 	if (c->ifi4 && c->mtu < IPV4_MIN_MTU) {
 diff --git a/dhcp.c b/dhcp.c
 index c3c7422..a248db2 100644
 --- a/dhcp.c
@@ -225,8 +246,22 @@ index 225b666..63595c6 100644
  	struct req_t {
  		struct nlmsghdr nlh;
  		struct ifinfomsg ifm;
+diff --git a/passt.c b/passt.c
+index 5054551..70c0476 100644
+--- a/passt.c
++++ b/passt.c
+@@ -453,7 +453,8 @@ int main(int argc, char **argv)
+ loop:
+ 	/* NOLINTBEGIN(bugprone-branch-clone): intervals can be the same */
+ 	/* cppcheck-suppress [duplicateValueTernary, unmatchedSuppression] */
+-	nfds = epoll_wait(c->epollfd, events, NUM_EPOLL_EVENTS, TIMER_INTERVAL);
++	nfds = epoll_pwait(c->epollfd, events, NUM_EPOLL_EVENTS, TIMER_INTERVAL,
++			   NULL);
+ 	/* NOLINTEND(bugprone-branch-clone) */
+ 	if (nfds == -1 && errno != EINTR)
+ 		die_perror("epoll_wait() failed in main loop");
 diff --git a/tap.c b/tap.c
-index dfa66c7..2afb14e 100644
+index dfa66c7..2a51d2f 100644
 --- a/tap.c
 +++ b/tap.c
 @@ -98,6 +98,12 @@ CHECK_FRAME_LEN(L2_MAX_LEN_VU);
@@ -298,31 +333,39 @@ index dfa66c7..2afb14e 100644
  
  	/* Check for any partial frames due to short send */
  	i = iov_skip_bytes(iov, nbufs, sent, &buf_offset);
-@@ -1255,6 +1295,43 @@ static void tap_passt_input(struct ctx *c, const struct timespec *now)
+@@ -1255,6 +1295,53 @@ static void tap_passt_input(struct ctx *c, const struct timespec *now)
  	p = pkt_buf;
  	n += partial_len;
  
 +	if (passt_raw_l2) {
 +		/* UML vector fd transport: raw ethernet frames, one datagram
-+		 * per frame.  No length prefix to strip, and nothing to
-+		 * reassemble: each recv() returns exactly one frame.
++		 * per frame, like pasta's.  The packet pool references frame
++		 * bytes until tap_handler() dispatches it, so each datagram
++		 * needs its own slot in pkt_buf: recv'ing every frame at the
++		 * buffer start would overwrite frames still queued in the
++		 * pool.  The initial recv() above already consumed the first
++		 * datagram into slot 0, so process it here and keep draining
++		 * from the next slot.
 +		 */
++		size_t off = 0;
++
 +		partial_len = 0;
 +		partial_frame = NULL;
 +
-+		while (n >= (ssize_t)sizeof(struct ethhdr)) {
++		for (;;) {
 +			struct iov_tail data;
 +
-+			if (n > (ssize_t)L2_MAX_LEN_PASST) {
-+				warn("Oversized raw frame from guest (%zd), dropped", n);
-+				break;
++			if (n >= (ssize_t)sizeof(struct ethhdr) &&
++			    n <= (ssize_t)L2_MAX_LEN_PASST) {
++				data = IOV_TAIL_FROM_BUF(pkt_buf + off, n, 0);
++				tap_add_packet(c, &data, now);
++				off += n;
 +			}
 +
-+			data = IOV_TAIL_FROM_BUF(p, n, 0);
-+			tap_add_packet(c, &data, now);
++			if (off > sizeof(pkt_buf) - L2_MAX_LEN_PASST)
++				break;
 +
-+			/* Next datagram, if more are queued */
-+			n = recv(c->fd_tap, pkt_buf, sizeof(pkt_buf),
++			n = recv(c->fd_tap, pkt_buf + off, L2_MAX_LEN_PASST,
 +				 MSG_DONTWAIT);
 +			if (n < 0) {
 +				if (errno != EAGAIN && errno != EWOULDBLOCK &&
@@ -333,6 +376,8 @@ index dfa66c7..2afb14e 100644
 +				}
 +				break;
 +			}
++			if (n == 0)
++				break;
 +		}
 +
 +		tap_handler(c, now);
@@ -342,7 +387,7 @@ index dfa66c7..2afb14e 100644
  	while (n >= (ssize_t)sizeof(uint32_t)) {
  		uint32_t l2len = ntohl_unaligned(p);
  		struct iov_tail data;
-@@ -1592,6 +1669,13 @@ static void tap_sock_update_pool(void *base, size_t size)
+@@ -1592,6 +1679,13 @@ static void tap_sock_update_pool(void *base, size_t size)
   */
  void tap_backend_init(struct ctx *c)
  {
