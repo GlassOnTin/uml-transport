@@ -21,11 +21,14 @@ Pinned by Haven's `fetch-uml.sh`, tag `uml-guest-4`:
 | `libuml-passt.so` | 608,472 | `17703eb787afcfc57475921f186bec6eae479db00cf60e1763c1a8459c055b36` |
 
 A fourth file, `rootfs-aarch64.ext4.gz`, is pinned separately by Haven's
-`fetch-uml-rootfs.sh`:
+`fetch-uml-rootfs.sh`, tag `uml-guest-5` (same rootfs as the `uml-guest-3`
+one, plus the agent launcher from `rootfs-overlay/root/agent-launcher.sh`
+as the inittab respawn line, opencode v1.18.31 preinstalled at
+`/root/bin/opencode`, and the libstdc++/libgcc it needs):
 
 | file | size | sha256 |
 |---|---|---|
-| `rootfs-aarch64.ext4.gz` | 4,497,803 | `c4acb30d0b53421775de080dcbd498a7d94bedf628d0dba77f7fb744f3792e47` |
+| `rootfs-aarch64.ext4.gz` | 75,711,802 | `b4795ba5e50abbb377bb1ace9cbbe3b9cf690356a19e31bc115ee1f741da10fd` |
 
 `uml-guest-4` is the `uml-guest-3` kernel with one post-link step added:
 `tools/um-arm64/harness/patch-glibc-seccomp.py` (below) replaces five svc
