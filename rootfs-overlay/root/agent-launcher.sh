@@ -27,6 +27,39 @@ SHA=20f548107dd3307437594ad4344f9dac2e2264c26ea03d946db461f73c2d1bf0
 
 die() { echo "agent-launcher: $*"; exec /bin/ash; }
 
+# Ask once for the endpoint and save it. Values are written single-quoted
+# so ids with spaces ("Qwen 3.8 Max") survive sourcing; an embedded '
+# becomes '\''.
+prompt_endpoint() {
+	echo "AI endpoint base URL (incl. /v1, e.g. https://api.nexos.ai/v1):"
+	IFS= read -r base
+	[ -n "$base" ] || die "empty base URL"
+	echo "API key (input hidden):"
+	stty -echo 2>/dev/null
+	IFS= read -r key
+	stty echo 2>/dev/null
+	echo
+	[ -n "$key" ] || die "empty key"
+	echo "Model id (e.g. Qwen 3.8 Max):"
+	IFS= read -r model
+	[ -n "$model" ] || die "empty model"
+	umask 077
+	{
+		printf 'AGENT_ENDPOINT_BASE='; sq_write "$base"; printf '\n'
+		printf 'AGENT_ENDPOINT_KEY=';  sq_write "$key";  printf '\n'
+		printf 'AGENT_MODEL=';         sq_write "$model"; printf '\n'
+	} > "$ENVF"
+	chmod 600 "$ENVF"
+	echo "agent-launcher: endpoint saved to $ENVF (chmod 600)"
+}
+
+# Emit $1 single-quoted, safe to source.
+sq_write() {
+	printf "'"
+	printf '%s' "$1" | sed "s/'/'\\\\''/g"
+	printf "'"
+}
+
 # Opt out of the agent TUI: touch /root/no-agent and this boot just gives
 # you a login shell. Remove the file to come back.
 if [ -e /root/no-agent ]; then
@@ -63,29 +96,22 @@ if [ ! -x "$BIN" ]; then
 fi
 
 if [ ! -f "$ENVF" ]; then
-	echo "AI endpoint base URL (incl. /v1, e.g. https://api.nexos.ai/v1):"
-	IFS= read -r base
-	[ -n "$base" ] || die "empty base URL"
-	echo "API key (input hidden):"
-	stty -echo 2>/dev/null
-	IFS= read -r key
-	stty echo 2>/dev/null
-	echo
-	[ -n "$key" ] || die "empty key"
-	echo "Model id (e.g. Qwen 3.8 Max):"
-	IFS= read -r model
-	[ -n "$model" ] || die "empty model"
-	umask 077
-	{
-		printf 'AGENT_ENDPOINT_BASE=%s\n' "$base"
-		printf 'AGENT_ENDPOINT_KEY=%s\n' "$key"
-		printf 'AGENT_MODEL=%s\n' "$model"
-	} > "$ENVF"
-	chmod 600 "$ENVF"
-	echo "agent-launcher: endpoint saved to $ENVF (chmod 600)"
+	prompt_endpoint
 fi
 
-. "$ENVF"
+# Source the saved endpoint. Values are written single-quoted (see
+# sq_write), but a file edited by hand may not be; if anything is missing
+# after sourcing, drop the file and ask again rather than crash-looping
+# under init's respawn.
+. "$ENVF" 2>/dev/null || true
+if [ -z "${AGENT_ENDPOINT_BASE:-}" ] || [ -z "${AGENT_ENDPOINT_KEY:-}" ] \
+	|| [ -z "${AGENT_MODEL:-}" ]; then
+	echo "agent-launcher: $ENVF is malformed (unquoted values?), re-prompting"
+	rm -f "$ENVF"
+	unset AGENT_ENDPOINT_BASE AGENT_ENDPOINT_KEY AGENT_MODEL
+	prompt_endpoint
+	. "$ENVF" 2>/dev/null || true
+fi
 [ -n "${AGENT_ENDPOINT_KEY:-}" ] || die "no key in $ENVF"
 
 mkdir -p /root/.config/opencode
