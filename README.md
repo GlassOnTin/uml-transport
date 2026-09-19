@@ -12,11 +12,11 @@ directory.
 
 ## Release artifacts
 
-Pinned by Haven's `fetch-uml.sh`, tag `uml-guest-3`:
+Pinned by Haven's `fetch-uml.sh`, tag `uml-guest-4`:
 
 | file | size | sha256 |
 |---|---|---|
-| `libvmlinux.so` | 79,307,152 | `35b5a379f6994ffa4886757d98e6f0f1b2c6c1f14a92b29c8fb108bcff3e0f9b` |
+| `libvmlinux.so` | 79,307,152 | `71cc9dc73c683a8c00fb533d01e7a1be27974876dcab2068419ea4b272fb387c` |
 | `libuml-stub.so` | 1,920 | `83f51f7c45133daa135b595562b09c5e2829f1d0f1e00b7fce2a7695370781fc` |
 | `libuml-passt.so` | 608,472 | `17703eb787afcfc57475921f186bec6eae479db00cf60e1763c1a8459c055b36` |
 
@@ -27,8 +27,33 @@ A fourth file, `rootfs-aarch64.ext4.gz`, is pinned separately by Haven's
 |---|---|---|
 | `rootfs-aarch64.ext4.gz` | 4,497,803 | `c4acb30d0b53421775de080dcbd498a7d94bedf628d0dba77f7fb744f3792e47` |
 
-`uml-guest-3` differs from `uml-guest-2` in `libuml-passt.so` and the rootfs.
-The kernel and stub binaries are the same bytes as `uml-guest-2`.
+`uml-guest-4` is the `uml-guest-3` kernel with one post-link step added:
+`tools/um-arm64/harness/patch-glibc-seccomp.py` (below) replaces five svc
+instructions. The stub, passt and rootfs binaries are the same bytes as
+`uml-guest-3`.
+
+That post-link step exists because Haven 5.89.7 (which shipped the
+`uml-guest-2`/`-3` kernel) failed to boot any guest on some devices: the
+process died with exit 159 (128+SIGSYS) about 100 ms after exec, before
+printing anything. An Android app process runs under zygote's seccomp
+filter, which kills `set_robust_list(2)` and `rseq(2)` with SIGSYS
+delivered via `force_sig_info` — handlers are bypassed and ptrace cannot
+intervene, because seccomp is evaluated before the syscall-entry stop.
+The statically linked libc issues both from `__tls_init_tp` at startup
+(and again on every thread creation). `uml-guest-1` predates the NAPI
+rebuild and was patched the same way from birth; the `-2`/`-3` relink
+dropped that step, which is the whole regression.
+
+`patch-glibc-seccomp.py` rewrites the svc after each `mov x8, #99` /
+`mov x8, #293` site: `set_robust_list` gets `mov w0, #0` (callers never
+check the result) and `rseq` gets `mov w0, #-1` (its caller treats that
+as `RSEQ_CPU_ID_REGISTRATION_FAILED` and carries on). It scans rather
+than using fixed addresses, so it survives relinks; running it twice is
+a no-op. `tools/um-arm64/harness/check-app-seccomp.sh` is the gate: it
+fails any binary that still contains a killed site, and
+`tools/um-arm64/harness/build-bionic.sh` runs the patch and then the
+gate after every link. Patching the `uml-guest-3` binary with the
+script reproduces the `uml-guest-4` sha256 byte for byte.
 
 `libuml-passt.so` picks up the passt-side raw-L2 pool-drain fix described
 under "Rebuilding passt" below (commit `0720a63` in this repository). On the
@@ -96,6 +121,18 @@ The kernel needs clang; a GNU cross build fails on a glibc/kernel
 `__alloc_size__` clash in `arch/um/os-Linux/`. `CONFIG_STATIC_LINK=y` picks
 the static link. No other changes were made: the toolchain defines
 `__ANDROID__`, which activates the bionic paths already in the tree.
+
+After linking, the app-seccomp neutering from the `uml-guest-4` section
+above is mandatory before the binary can run in an app:
+
+    python3 tools/um-arm64/harness/patch-glibc-seccomp.py build/linux
+    python3 tools/um-arm64/harness/check-app-seccomp.sh build/linux   # must pass
+
+The same scripts live on the source branch at
+`tools/um-arm64/harness/` (commits `d4e32a483`, `d580adc09`, `9ba484601`
+on top of `7edec4df1` in the local um-arm64 tree; pushing that branch to
+GitHub fails server-side on the 282 MB pack, so this copy under
+`tools/um-arm64/harness/` is the published one).
 
 A GNU/Linux glibc-dynamic build of this kernel does not run on Android (no
 `/lib/ld-linux-aarch64.so.1`), which is why the static bionic build is the
