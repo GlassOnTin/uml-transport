@@ -21,7 +21,7 @@ Pinned by Haven's `fetch-uml.sh`, tag `uml-guest-4`:
 | `libuml-passt.so` | 608,472 | `17703eb787afcfc57475921f186bec6eae479db00cf60e1763c1a8459c055b36` |
 
 A fourth file, `rootfs-aarch64.ext4.gz`, is pinned separately by Haven's
-`fetch-uml-rootfs.sh`, tag `uml-guest-7`. Guest-6 base with four fixes
+`fetch-uml-rootfs.sh`, tag `uml-guest-8`. Guest-6 base with five fixes
 measured on device:
 
 - the rootfs image is 1 GiB (guest-6's 512 MiB filled up: bun's native-lib
@@ -37,11 +37,18 @@ measured on device:
   a few minutes" note, and restores `stty sane` for the post-TUI shell;
 - endpoint.env is backed up to the share and restored after a re-stage
   (goose-format `nexos.env.bak` is migrated too), and `agent-shell` in
-  the share drops the next boot to a login shell.
+  the share drops the next boot to a login shell;
+- `/etc/inittab`'s sysinit hostfs mount failed silently on every boot
+  while the same mount succeeded from a shell minutes later, so fresh
+  installs fell back to the endpoint prompt instead of restoring. The
+  `2>/dev/null` on that line was the only delta between the failing and
+  the working boots; it is gone and a failed mount now echoes
+  `HOSTFSFAIL` to the console. The composed inittab is checked in as
+  `rootfs-overlay/etc/inittab`.
 
 | file | size | sha256 |
 |---|---|---|
-| `rootfs-aarch64.ext4.gz` | 76,238,940 | `81301b5ff9b7d6fd63550d2e26a5763f7636bfe1697b6f8b8af7e7a42d6cf0f9` |
+| `rootfs-aarch64.ext4.gz` | 76,238,474 | `507c2960530d79ddaa9a7b64a1cd4c74129c3321969433234aabb7a9c5d1de8c` |
 
 `uml-guest-4` is the `uml-guest-3` kernel with one post-link step added:
 `tools/um-arm64/harness/patch-glibc-seccomp.py` (below) replaces five svc

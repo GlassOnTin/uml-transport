@@ -1,0 +1,11 @@
+::sysinit:/bin/mount -t proc none /proc
+::sysinit:/bin/mount -t sysfs none /sys 2>/dev/null
+::sysinit:/bin/mkdir -p /host && /bin/mount -t hostfs none /host || echo HOSTFSFAIL
+::sysinit:/sbin/hwclock -s 2>/dev/null
+::sysinit:hostname uml
+::sysinit:/sbin/haven-net
+::sysinit:echo "UML rootfs ready"
+::sysinit:/sbin/haven-recover
+::respawn:/root/agent-launcher.sh
+::ctrlaltdel:/sbin/reboot
+::shutdown:/bin/umount -a -r
