@@ -216,13 +216,30 @@ mkdir -p /root/.config/opencode
 export AGENT_ENDPOINT_BASE AGENT_ENDPOINT_KEY AGENT_MODEL
 [ -n "${HAVEN_MCP_TOKEN:-}" ] && export HAVEN_MCP_TOKEN HAVEN_MCP_URL
 cd /root
-cd /root
 echo "agent-launcher: starting opencode — the first frame can take a few minutes on this device."
 # Hand the TUI a raw tty: the guest line discipline defaults to ICRNL, which
 # turns the terminal's \r into \n and Enter inserts a newline instead of
 # submitting. inlcr also maps a \n (in case a cooked path is upstream) back
 # to \r. Bracketed-paste keeps multi-line pastes intact.
 stty raw -echo inlcr 2>/dev/null
+# Re-broadcast SIGWINCH: the UML console forwards host-side resizes
+# unreliably (the second of a rapid keyboard show/hide pair is dropped)
+# and a resize made inside the guest never signals the foreground group
+# at all. Poll the console size and SIGWINCH the TUI on any change; the
+# loop dies with opencode so each respawn runs exactly one watcher.
+(
+	sleep 1
+	last=""
+	while :; do
+		pidof opencode >/dev/null 2>&1 || exit
+		size=$(stty -F /dev/console size 2>/dev/null) || { sleep 1; continue; }
+		if [ -n "$last" ] && [ "$size" != "$last" ]; then
+			for p in $(pidof opencode); do kill -WINCH "$p" 2>/dev/null; done
+		fi
+		last=$size
+		sleep 0.3
+	done
+) &
 "$BIN" || true
 stty sane 2>/dev/null
 # On exit hand the console to a shell; logging out respawns the launcher,
