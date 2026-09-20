@@ -160,6 +160,24 @@ if [ -z "${AGENT_ENDPOINT_BASE:-}" ] || [ -z "${AGENT_ENDPOINT_KEY:-}" ] \
 fi
 [ -n "${AGENT_ENDPOINT_KEY:-}" ] || die "no key in $ENVF"
 
+# Haven MCP (optional): the share may carry a pairing token for Haven's
+# agent endpoint. When it does, the generated config gains the Haven MCP
+# server so the in-guest agent can call Haven verbs over the slirp route —
+# reads are free, writes surface the usual consent sheet on the phone
+# screen. The token is referenced through an env var, never baked into the
+# config file, and is backed up on the share like the endpoint env so a
+# re-stage keeps it.
+HAVEN_URL_FILE=/root/haven-mcp.env
+if [ ! -f "$HAVEN_URL_FILE" ] && [ -f /host/haven-mcp.env ]; then
+	cp /host/haven-mcp.env "$HAVEN_URL_FILE"
+	chmod 600 "$HAVEN_URL_FILE"
+	echo "agent-launcher: haven-mcp.env restored from the share"
+fi
+if [ -f "$HAVEN_URL_FILE" ]; then
+	. "$HAVEN_URL_FILE" 2>/dev/null || true
+fi
+HAVEN_MCP_URL="${HAVEN_MCP_URL:-http://169.254.2.2:8730/mcp}"
+
 mkdir -p /root/.config/opencode
 {
 	printf '%s\n' '{'
@@ -176,12 +194,28 @@ mkdir -p /root/.config/opencode
 	printf '      "models": {\n'
 	printf '        "%s": { "name": "%s" }\n' "$AGENT_MODEL" "$AGENT_MODEL"
 	printf '      }\n'
-	printf '    }\n'
+	if [ -n "${HAVEN_MCP_TOKEN:-}" ]; then
+		printf '    },\n'
+		printf '    "mcp": {\n'
+		printf '      "haven": {\n'
+		printf '        "type": "remote",\n'
+		printf '        "url": "%s",\n' "$HAVEN_MCP_URL"
+		printf '        "enabled": true,\n'
+		printf '        "headers": {\n'
+		printf '          "Authorization": "Bearer {env:HAVEN_MCP_TOKEN}"\n'
+		printf '        }\n'
+		printf '      }\n'
+		printf '    }\n'
+	else
+		printf '    }\n'
+	fi
 	printf '  }\n'
 	printf '%s\n' '}'
 } > "$CFG"
 
 export AGENT_ENDPOINT_BASE AGENT_ENDPOINT_KEY AGENT_MODEL
+[ -n "${HAVEN_MCP_TOKEN:-}" ] && export HAVEN_MCP_TOKEN HAVEN_MCP_URL
+cd /root
 cd /root
 echo "agent-launcher: starting opencode — the first frame can take a few minutes on this device."
 # Hand the TUI a raw tty: the guest line discipline defaults to ICRNL, which
