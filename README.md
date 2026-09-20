@@ -21,15 +21,27 @@ Pinned by Haven's `fetch-uml.sh`, tag `uml-guest-4`:
 | `libuml-passt.so` | 608,472 | `17703eb787afcfc57475921f186bec6eae479db00cf60e1763c1a8459c055b36` |
 
 A fourth file, `rootfs-aarch64.ext4.gz`, is pinned separately by Haven's
-`fetch-uml-rootfs.sh`, tag `uml-guest-6` (same rootfs as the `uml-guest-5`
-one, plus the launcher fix from d9c9305: the one-time endpoint prompt now
-saves single-quoted values so a model id with a space survives sourcing,
-and a malformed `endpoint.env` is re-prompted instead of crash-looping
-under init's respawn):
+`fetch-uml-rootfs.sh`, tag `uml-guest-7`. Guest-6 base with four fixes
+measured on device:
+
+- the rootfs image is 1 GiB (guest-6's 512 MiB filled up: bun's native-lib
+  materialisation plus the agent binary left the fs 100% full, which
+  broke the opencode TUI's libopentui load), and
+  `/$bunfs/root/libopentui-qwr30y4h.so` ships as a real file so that
+  dlopen target exists from first boot;
+- `/sbin/haven-net` is back at sysinit (the guest-5/6 rebase lost it, so
+  stock guests booted with no route and opencode stalled on unreachable
+  endpoints);
+- the launcher hands the TUI a raw tty (`stty raw -echo inlcr`) so Enter
+  submits instead of inserting a newline, prints a "first frame can take
+  a few minutes" note, and restores `stty sane` for the post-TUI shell;
+- endpoint.env is backed up to the share and restored after a re-stage
+  (goose-format `nexos.env.bak` is migrated too), and `agent-shell` in
+  the share drops the next boot to a login shell.
 
 | file | size | sha256 |
 |---|---|---|
-| `rootfs-aarch64.ext4.gz` | 75,711,622 | `7c8030c60276e5697cada54d790aec3d8e86a204c8a21687f046fde92588251d` |
+| `rootfs-aarch64.ext4.gz` | 76,238,940 | `81301b5ff9b7d6fd63550d2e26a5763f7636bfe1697b6f8b8af7e7a42d6cf0f9` |
 
 `uml-guest-4` is the `uml-guest-3` kernel with one post-link step added:
 `tools/um-arm64/harness/patch-glibc-seccomp.py` (below) replaces five svc

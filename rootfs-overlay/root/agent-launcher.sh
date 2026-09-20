@@ -19,6 +19,7 @@ set -u
 export TERM=xterm-256color
 BIN=/root/bin/opencode
 ENVF=/root/endpoint.env
+ENVBAK=/host/endpoint.env
 CFG=/root/.config/opencode/opencode.json
 VER=v1.18.31
 TARBALL=opencode-linux-arm64-musl.tar.gz
@@ -66,6 +67,14 @@ if [ -e /root/no-agent ]; then
 	exec /bin/ash -l
 fi
 
+# Escape hatch when the TUI owns the console and you cannot reach a shell:
+# create agent-shell in the share (Haven Files -> uml share), then reconnect
+# the guest. This boot gives a login shell and removes the flag.
+if [ -e /host/agent-shell ]; then
+	rm -f /host/agent-shell
+	exec /bin/ash -l
+fi
+
 # The -musl build still links against libstdc++/libgcc for its C++ deps.
 if [ ! -e /usr/lib/libstdc++.so.6 ]; then
 	echo "agent-launcher: installing libstdc++/libgcc..."
@@ -95,8 +104,45 @@ if [ ! -x "$BIN" ]; then
 	rm -rf /tmp/oc /tmp/oc.tar.gz
 fi
 
+if [ ! -f "$ENVF" ] && [ -f "$ENVBAK" ]; then
+	# The rootfs image was re-staged (a rootfs update wipes guest data);
+	# restore the endpoint from the share backup instead of re-prompting.
+	cp "$ENVBAK" "$ENVF"
+	chmod 600 "$ENVF"
+	echo "agent-launcher: endpoint restored from $ENVBAK"
+fi
+
+# Older installs kept a goose-format backup instead; derive the endpoint
+# from it in-guest (values never cross the console). Falls through to the
+# prompt if anything is missing.
+if [ ! -f "$ENVF" ] && [ -f /host/nexos.env.bak ]; then
+	. /host/nexos.env.bak 2>/dev/null || true
+	case "${OPENAI_HOST:-}" in
+		*/v1) BASE="$OPENAI_HOST" ;;
+		"")   BASE="" ;;
+		*)    BASE="$OPENAI_HOST/v1" ;;
+	esac
+	if [ -n "${BASE:-}" ] && [ -n "${OPENAI_API_KEY:-}" ] \
+		&& [ -n "${GOOSE_MODEL:-}" ]; then
+		umask 077
+		{
+			printf 'AGENT_ENDPOINT_BASE='; sq_write "$BASE"; printf '\n'
+			printf 'AGENT_ENDPOINT_KEY=';  sq_write "$OPENAI_API_KEY";  printf '\n'
+			printf 'AGENT_MODEL=';         sq_write "$GOOSE_MODEL";     printf '\n'
+		} > "$ENVF"
+		chmod 600 "$ENVF"
+		echo "agent-launcher: endpoint.env restored from /host/nexos.env.bak"
+	fi
+	unset OPENAI_HOST OPENAI_API_KEY GOOSE_MODEL BASE
+fi
+
 if [ ! -f "$ENVF" ]; then
 	prompt_endpoint
+	# Back it up outside the rootfs image so a re-stage keeps the key.
+	if [ -d /host ]; then
+		cp "$ENVF" "$ENVBAK"
+		chmod 600 "$ENVBAK"
+	fi
 fi
 
 # Source the saved endpoint. Values are written single-quoted (see
@@ -137,7 +183,14 @@ mkdir -p /root/.config/opencode
 
 export AGENT_ENDPOINT_BASE AGENT_ENDPOINT_KEY AGENT_MODEL
 cd /root
+echo "agent-launcher: starting opencode — the first frame can take a few minutes on this device."
+# Hand the TUI a raw tty: the guest line discipline defaults to ICRNL, which
+# turns the terminal's \r into \n and Enter inserts a newline instead of
+# submitting. inlcr also maps a \n (in case a cooked path is upstream) back
+# to \r. Bracketed-paste keeps multi-line pastes intact.
+stty raw -echo inlcr 2>/dev/null
+"$BIN" || true
+stty sane 2>/dev/null
 # On exit hand the console to a shell; logging out respawns the launcher,
 # so the tab cycles TUI -> shell -> TUI and never locks the user out.
-"$BIN" || true
 exec /bin/ash
