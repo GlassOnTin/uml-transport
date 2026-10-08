@@ -14,6 +14,14 @@
 # storage, not the phone's.
 
 set -u
+# A desktop session parks the agent TUI entirely: Haven marks the boot with
+# a haven.desktop= kernel arg, and the desktop recipe drives this console
+# itself (and owns the forwarded VNC ports). Same effect as /root/no-agent,
+# keyed to the boot instead of a file. The TUI never starts, so nothing
+# races the desktop for the console or refetches opencode.
+if grep -q 'haven.desktop=' /proc/cmdline 2>/dev/null; then
+	exec /bin/ash -l
+fi
 # The kernel hands the console a vt102 default; the TUI needs the full
 # xterm set (256col, alt screen).
 export TERM=xterm-256color

@@ -21,8 +21,31 @@ Pinned by Haven's `fetch-uml.sh`, tag `uml-guest-4`:
 | `libuml-passt.so` | 608,472 | `17703eb787afcfc57475921f186bec6eae479db00cf60e1763c1a8459c055b36` |
 
 A fourth file, `rootfs-aarch64.ext4.gz`, is pinned separately by Haven's
-`fetch-uml-rootfs.sh`, tag `uml-guest-8`. Guest-6 base with five fixes
-measured on device:
+`fetch-uml-rootfs.sh`, tag `uml-guest-9`. Guest-8 base with the launcher
+and desktop hooks Haven's UML desktop mirror needs, measured on device
+via the stage-0 test (Haven's `docs/plans/uml-dm.md`):
+
+- the launcher's Haven-MCP config block and console-resize SIGWINCH
+  re-broadcast are in the image for the first time (guest-8 predates
+  the two overlay commits that added them);
+- a `haven.desktop=` kernel arg parks the agent TUI: the launcher execs
+  a login shell instead of starting opencode, so the desktop recipe
+  owns the console and the TUI never refetches its ~62 MB bundle
+  underneath a desktop session;
+- `/dev/pts` (devpts) and `/dev/shm` (tmpfs, mode=1777) are mounted at
+  sysinit — xterm fails with "not enough ptys" and wlroots fails
+  `shm_open` ("Failed to allocate shm file for keymap", so sway runs
+  but renders nothing) without them;
+- the rootfs image is 2 GiB: with just the desktop package set
+  (tigervnc, openbox, xterm, mesa, wayvnc, sway, foot) a 1 GiB image
+  ran at 96%.
+
+| file | size | sha256 |
+|---|---|---|
+| `rootfs-aarch64.ext4.gz` | 77,282,923 | `4bc520eac8564f6f076972c28f2681dfff52f80503fa42b2cdc8c2596ec1e34f` |
+
+The `uml-guest-8` rootfs was the guest-6 base with five fixes measured
+on device:
 
 - the rootfs image is 1 GiB (guest-6's 512 MiB filled up: bun's native-lib
   materialisation plus the agent binary left the fs 100% full, which

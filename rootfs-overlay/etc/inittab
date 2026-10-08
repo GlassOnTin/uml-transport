@@ -1,5 +1,8 @@
 ::sysinit:/bin/mount -t proc none /proc
 ::sysinit:/bin/mount -t sysfs none /sys 2>/dev/null
+::sysinit:/bin/mkdir -p /dev/pts /dev/shm
+::sysinit:/bin/mount -t devpts devpts /dev/pts || echo DEVPTSFAIL
+::sysinit:/bin/mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /dev/shm || echo SHMFAIL
 ::sysinit:/bin/mkdir -p /host && /bin/mount -t hostfs none /host || echo HOSTFSFAIL
 ::sysinit:/sbin/hwclock -s 2>/dev/null
 ::sysinit:hostname uml
