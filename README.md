@@ -12,7 +12,17 @@ directory.
 
 ## Release artifacts
 
-Pinned by Haven's `fetch-uml.sh`, tag `uml-guest-4`:
+Pinned by Haven's `fetch-uml.sh`, tag `uml-guest-10`:
+
+| file | size | sha256 |
+|---|---|---|
+| `libvmlinux.so` | 129,634,648 | `246d84a1401438b14766f5a70f1f11b67f8e9eb29d8cabff4922c6c7c774ab6c` |
+| `libuml-stub.so` | 1,920 | `83f51f7c45133daa135b595562b09c5e2829f1d0f1e00b7fce2a7695370781fc` |
+| `libuml-passt.so` | 608,472 | `17703eb787afcfc57475921f186bec6eae479db00cf60e1763c1a8459c055b36` |
+
+`uml-guest-10` is the `uml-guest-4` kernel built with `EXTRA_CONFIG=usb-haven.config`, adding `CONFIG_USB=y`, `CONFIG_USBIP_CORE=y`, `CONFIG_USBIP_VHCI_HCD=y`, and built-in USB class drivers (`uvcvideo`, `snd-usb-audio`, `usb-storage`, `uas`, `usbhid`, `hidraw`, `cdc-acm`, `usbserial` + `ch341`/`cp210x`/`ftdi_sio`/`pl2303`, `r8152`, `cdc_ether`, `cdc_ncm`, `rtw88_8821au`) so UML guests can attach USB devices exported by Haven's built-in USB/IP server (`vhci_hcd` registers USB 2.0 High-Speed bus 1 and USB 3.0 SuperSpeed bus 2 at boot). `libuml-stub.so` and `libuml-passt.so` are unchanged from `uml-guest-4`.
+
+Previous kernel release (`uml-guest-4`):
 
 | file | size | sha256 |
 |---|---|---|
