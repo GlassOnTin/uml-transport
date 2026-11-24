@@ -16,6 +16,18 @@ Killed on OPPO CPH2655, Android 16, kernel 6.6 (probed with harness/probe):
                           and on failure sets RSEQ_CPU_ID_REGISTRATION_FAILED
                           and carries on, so fake failure (mov w0, #-1 via
                           movn w0, #0) is safe.
+  close_range (436)     - killed on more Android seccomp policies (reported
+                          via Haven #877: "SIGSYS: blocked syscall 436",
+                          start_userspace failed). Two kinds of site need
+                          OPPOSITE fakes, chosen per-site by the instruction
+                          after the svc:
+                          * UML's seccomp_helper does close_range(1,-1,0)
+                            then `cbnz x0, <exit>` — a non-zero result kills
+                            the boot, so fake SUCCESS (mov w0, #0).
+                          * bionic's close_range wrapper feeds closefrom,
+                            which falls back to a close loop on ENOSYS —
+                            fake -ENOSYS (movn w0, #37) so the fds really
+                            get closed; faking success would leak them.
 bionic's startup calls set_robust_list too, so this is not glibc-specific.
 
 Every site sets x8 = syscall number then issues svc #0 within 16
@@ -29,14 +41,22 @@ is the gate that fails if a binary ever ships unpatched.
 import struct
 import sys
 
-MOV_W0_0 = 0x52800000   # mov w0, #0   -> fake success
-MOVN_W0_0 = 0x12800000  # mov w0, #-1  -> fake failure
-SVC0 = 0xD4000001       # svc #0
+MOV_W0_0 = 0x52800000        # mov w0, #0    -> fake success
+MOVN_W0_0 = 0x12800000       # mov w0, #-1   -> fake failure
+MOVN_W0_ENOSYS = 0x128004A0  # movn w0, #37  -> w0 = -38 (-ENOSYS)
+SVC0 = 0xD4000001            # svc #0
 
-# syscall number -> (replacement, description)
+# cbnz x0/w0, #imm (Rt=0): sf bit varies, so mask it off. Used to recognise
+# UML's seccomp_helper, which exits on a non-zero close_range result.
+CBNZ_X0_MASK = 0x7F00001F
+CBNZ_X0 = 0x35000000
+
+# syscall number -> (default replacement, description). close_range's
+# default is refined per-site in the scan loop below.
 PATCHES = {
     99: (MOV_W0_0, "set_robust_list"),
     293: (MOVN_W0_0, "rseq"),
+    436: (MOV_W0_0, "close_range"),
 }
 
 
@@ -68,6 +88,12 @@ def main(path):
         repl, name = hit
         for j in range(i + 1, min(i + 16, n)):
             if words[j] == SVC0:
+                if name == "close_range":
+                    # seccomp_helper exits on a non-zero result (cbnz x0) →
+                    # fake success; the libc wrapper falls back on ENOSYS →
+                    # fake -ENOSYS so closefrom really closes the fds.
+                    nxt = words[j + 1] if j + 1 < n else 0
+                    repl = MOV_W0_0 if (nxt & CBNZ_X0_MASK) == CBNZ_X0 else MOVN_W0_ENOSYS
                 words[j] = repl
                 counts[name] = counts.get(name, 0) + 1
                 break

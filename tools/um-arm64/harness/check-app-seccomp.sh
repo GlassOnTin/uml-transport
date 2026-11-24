@@ -2,10 +2,12 @@
 """Fail if a UML kernel binary still contains seccomp-killed syscall sites.
 
 An Android app process runs under zygote's seccomp filter, which kills
-set_robust_list(2) and rseq(2) with SIGSYS delivered via force_sig_info --
-handlers are bypassed and ptrace cannot intervene, because seccomp evaluates
-before the syscall-entry stop. A statically linked kernel that still issues
-either syscall dies ~100 ms after exec, exit 159, with no output of any kind.
+set_robust_list(2), rseq(2) and (on some policies) close_range(2) with SIGSYS
+delivered via force_sig_info -- handlers are bypassed and ptrace cannot
+intervene, because seccomp evaluates before the syscall-entry stop. A
+statically linked kernel that still issues any of these dies ~100 ms after
+exec, exit 159, with no output of any kind (close_range surfaces as
+"SIGSYS: blocked syscall 436 / start_userspace failed", Haven #877).
 
 This is the regression gate for harness/patch-glibc-seccomp.py, which neuters
 the svc instructions after the offending mov x8, #imm sites. Both scan the
@@ -36,6 +38,7 @@ SVC0 = 0xD4000001
 KILLED = {
     99: "set_robust_list",
     293: "rseq",
+    436: "close_range",
 }
 
 
